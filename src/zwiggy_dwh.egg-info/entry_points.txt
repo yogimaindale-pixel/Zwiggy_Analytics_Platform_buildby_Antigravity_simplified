@@ -1,0 +1,2 @@
+[console_scripts]
+zwiggy-dwh = zwiggy_dwh.cli:main

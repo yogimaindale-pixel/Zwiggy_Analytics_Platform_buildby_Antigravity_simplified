@@ -1,0 +1,70 @@
+Metadata-Version: 2.4
+Name: zwiggy-dwh
+Version: 1.0.0
+Summary: Zwiggy Analytics Platform - Medallion Data Warehouse (Bronze, Silver, Gold)
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: pandas>=2.0.0
+Requires-Dist: sqlalchemy>=2.0.0
+Requires-Dist: duckdb>=0.9.0
+Requires-Dist: psycopg2-binary>=2.9.0
+Requires-Dist: python-dotenv>=1.0.0
+
+# Zwiggy-Antigravity - Medallion Data Warehouse Platform
+
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Architecture](https://img.shields.io/badge/Architecture-Medallion%20(Bronze%20%E2%86%92%20Silver%20%E2%86%92%20Gold)-green.svg)]()
+
+Production-grade, metadata-driven Medallion Data Warehouse platform for **Zwiggy Analytics Platform** capstone project.
+
+---
+
+## Architecture Overview
+
+```
+Source System (zwiggy_db)
+    │
+    ▼ (Source-to-Bronze Ingestion)
+Bronze Layer (br_*)  ── raw JSON payload + technical metadata
+    │
+    ▼ (Bronze-to-Silver Cleansing & Conformance)
+Silver Layer (slv_*) ── conformed status, cohort tagging, DQ flags
+    │                     ├──► Silver Quarantine (slv_*_quarantine)
+    ▼ (Silver-to-Gold Dimensional Build)
+Gold Layer (dim_*, fact_*, mart_*) ── 14 SCD2 dims, 6 facts, 2 aggregate marts
+```
+
+---
+
+## Key Features
+
+1. **Metadata-Driven Ingestion**: 18 source tables classified into `TIMESTAMP_WATERMARK`, `CREATED_DATE_WATERMARK`, `FULL_SNAPSHOT`, and `FULL_REFERENCE` strategies.
+2. **Cohort Boundary Management**: Automatically tags orders into `COHORT_A` (order_id ≤ 10,928, human status vocabulary) vs `COHORT_B` (order_id > 10,928, machine vocabulary).
+3. **Data Quality & Quarantine Framework**: Evaluates 40+ DQ rules, routes failing records to quarantine tables, and publishes daily quality scorecard.
+4. **SCD2 Dimensional Modeling**: 14 SCD2 dimensions with surrogate keys (`*_sk`), `valid_from_utc`, `valid_to_utc`, `is_current`, and MD5 change detection (`dw_row_hash`).
+5. **As-At Fact Resolution**: 6 Gold fact tables joining to dimensions at event timestamp, with fallback key `-1` and `dq_flag_dim_fallback`.
+6. **Mandatory Reconciliation Engine**: Evaluates 10 cross-layer reconciliation contracts (RC-1 through RC-10).
+
+---
+
+## Quick Start
+
+```bash
+# Activate virtual environment
+source venv/bin/activate
+
+# Run test suite
+pytest
+
+# Execute end-to-end Medallion pipeline
+python -m zwiggy_dwh.cli run-all
+```
+
+---
+
+## Documentation
+
+- [DWH_TECHNICAL_SPECIFICATION.md](file:///config/Desktop/Session4/DWH_TECHNICAL_SPECIFICATION.md): Architecture & layer specifications.
+- [TABLE_INGESTION_CONFIGURATION.csv](file:///config/Desktop/Session4/TABLE_INGESTION_CONFIGURATION.csv): 18-table strategy matrix.
+- [DATA_DICTIONARY.md](file:///config/Desktop/Session4/DATA_DICTIONARY.md): Complete field-level schema dictionary.
+- [OPERATIONAL_RUNBOOK.md](file:///config/Desktop/Session4/OPERATIONAL_RUNBOOK.md): Execution & troubleshooting runbook.
