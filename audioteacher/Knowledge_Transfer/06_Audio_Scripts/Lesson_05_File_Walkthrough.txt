@@ -1,0 +1,8 @@
+Welcome back student. Today we are going to take a tour of key files across the codebase.
+In src zwiggy dwh config dot py, environment variables are loaded and validated into typed dataclass settings.
+In src zwiggy dwh db dot py, connection wrappers provide automatic transaction commit and rollback safety, while the with retry decorator handles transient database locks with exponential backoff.
+In src zwiggy dwh metadata dot py, source table matrix rules classify tables as full reload or incremental delta.
+In src zwiggy dwh seed source dot py, synthetic OLTP data is generated to simulate real-world food delivery operations across two customer cohorts.
+Let's pause and understand this with an example. Config is the control panel of a airplane, DB is the engine safety mechanism, and seed source is the flight simulator providing realistic test weather.
+Now let's see where this appears in the repository. You can inspect all these foundation modules directly inside the src zwiggy dwh folder.
+Congratulations, you now understand how configuration, database resilience, and metadata foundation modules fit together!

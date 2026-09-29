@@ -1,0 +1,11 @@
+Welcome back student. Today we are going to trace the end-to-end execution flow of a pipeline run.
+Execution begins when a user or scheduler executes python minus m zwiggy dwh cli run all.
+The CLI dispatches execution to run full etl pipeline in src zwiggy dwh pipeline dot py.
+Step one starts a new batch in ctl batch log and ingests source deltas into Bronze.
+Step two transforms Bronze JSON payloads into Silver clean tables and routes anomalies to quarantine.
+Step three evaluates Data Quality rules and produces a quality scorecard.
+Step four builds Gold SCD Type 2 dimensions and central Fact tables.
+Step five executes cross-layer reconciliation checks to verify zero row or revenue discrepancy.
+Let's pause and understand this with an example. It is like an automated car assembly line where the chassis is inspected at five sequential quality stations before rolling off the line.
+Now let's see where this appears in the repository. The master sequence is wired inside src zwiggy dwh pipeline dot py.
+Congratulations, you now understand the exact five-step execution sequence of the Zwiggy Data Warehouse pipeline!

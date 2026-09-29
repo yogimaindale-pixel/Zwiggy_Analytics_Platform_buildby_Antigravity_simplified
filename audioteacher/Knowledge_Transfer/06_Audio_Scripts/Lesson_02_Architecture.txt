@@ -1,0 +1,8 @@
+Welcome back student. Today we are going to dive deep into the Medallion Data Architecture.
+The Medallion Architecture organizes data into three progressive refinement layers: Bronze, Silver, and Gold.
+The Bronze layer acts as raw landing. It ingests transactional delta records directly from source tables and stores raw JSON payloads with extraction timestamps and batch IDs.
+The Silver layer cleanses and standardizes this data. It decodes raw JSON, casts data types, handles missing null values, masks sensitive customer PII, and isolates corrupt records into quarantine tables.
+The Gold layer implements Kimball Dimensional Modeling. It builds 14 Slowly Changing Dimensions with effective dates and current flags, 6 Fact tables, and 2 analytical business marts.
+Let's pause and understand this with an example. Bronze is like raw wheat harvested from a farm. Silver is refined flour with impurities filtered out. Gold is a freshly baked loaf of bread ready for consumers.
+Now let's see where this appears in the repository. Schema creation DDL statements for all three layers are implemented in src zwiggy dwh init db dot py.
+Congratulations, you now understand how data progresses through Bronze raw landing, Silver cleansing, and Gold dimensional layers!

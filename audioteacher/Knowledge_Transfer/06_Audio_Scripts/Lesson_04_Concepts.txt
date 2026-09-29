@@ -1,0 +1,7 @@
+Welcome back student. Today we are going to master core data engineering concepts, including Data Quality firewalls and Slowly Changing Dimensions.
+Data Quality is the cornerstone of trustworthy analytics. Our pipeline evaluates seven mandatory quality rules, measuring completeness, uniqueness, referential integrity, and range bounds.
+If an order contains a negative total amount, the Data Quality firewall catches it and routes the record to quarantine.
+Another key concept is Slowly Changing Dimension Type 2. When a customer updates their delivery address, we do not overwrite the old address. Instead, we close the historical record with an effective end date and insert a new active record with a current flag set to one.
+Let's pause and understand this with an example. Think of SCD Type 2 like keeping a photo album of your customer over time rather than overwriting their single profile photo.
+Now let's see where this appears in the repository. Data Quality rule evaluation is coded in src zwiggy dwh dq dot py, while SCD Type 2 transformations are implemented in src zwiggy dwh gold dot py.
+Congratulations, you now understand Data Quality firewalls and Slowly Changing Dimension Type 2 tracking!

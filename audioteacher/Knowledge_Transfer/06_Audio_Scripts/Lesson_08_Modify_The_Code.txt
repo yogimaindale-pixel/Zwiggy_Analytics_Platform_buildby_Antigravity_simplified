@@ -1,0 +1,10 @@
+Welcome back student. Today we are going to learn how to modify and extend the repository code.
+Suppose business requests a new table, such as app restaurant coupons.
+To add this table, follow four simple steps:
+First, add the DDL table definition in src zwiggy dwh init db dot py for Bronze, Silver, and Gold.
+Second, add the ingestion strategy entry in ctl table config inside metadata dot py.
+Third, add data cleansing rules and PII masks in src zwiggy dwh silver dot py.
+Fourth, add Pytest unit tests inside tests folder and run pytest to verify everything passes cleanly.
+Let's pause and understand this with an example. Extending the pipeline is like adding a new modular room to a modern smart house without tearing down the foundation.
+Now let's see where this appears in the repository. Table configurations are defined in TABLE INGESTION CONFIGURATION dot csv and metadata dot py.
+Congratulations, you now understand how to safely extend the Data Warehouse pipeline with new tables and custom business rules!

@@ -1,0 +1,10 @@
+Welcome back student. Today we are going to practice answering technical interview questions based on this repository.
+Question one: How do you handle transient database locks during batch execution?
+Spoken answer: We implement a connection wrapper with an exponential backoff decorator that catches database operational errors and retries up to three times with increasing delays.
+Question two: How do you ensure historical accuracy when customer addresses change?
+Spoken answer: We use Slowly Changing Dimension Type 2 in the Gold layer, expiring old records with effective end dates and inserting new active records with current flags set to one.
+Question three: How do you prove data fidelity across pipeline layers?
+Spoken answer: We run automated reconciliation checks comparing record counts and total revenue sums between Source, Bronze, Silver, and Gold layers.
+Let's pause and understand this with an example. Answering interview questions with structured executive summaries and technical details demonstrates senior engineering maturity.
+Now let's see where this appears in the repository. Reconciliation checks are implemented in src zwiggy dwh reconcile dot py.
+Congratulations, you now understand how to confidently defend the architecture and engineering choices of this project in technical interviews!

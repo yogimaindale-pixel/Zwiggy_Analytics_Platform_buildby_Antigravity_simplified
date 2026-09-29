@@ -1,0 +1,8 @@
+Hello student. Today we are going to learn about the Zwiggy Analytics Platform Data Warehouse repository.
+This repository solves a critical problem for hyper-local food delivery platforms like Zwiggy.
+When millions of customers place orders, operational databases get overloaded by analytical queries.
+To prevent app slowdowns, we extract transactional data into a dedicated Data Warehouse using the Medallion Data Architecture.
+The repository contains 15 core Python modules in the src zwiggy dwh package, handling everything from database configuration and connection retries, to raw Bronze landing, Silver data cleansing, Data Quality rule validation, Gold Star Schema dimensional modeling, and cross-layer reconciliation checks.
+Let's pause and understand this with an example. Imagine a busy restaurant kitchen where orders are taken on paper tickets. If managers try to count daily revenue directly inside the active kitchen line, chefs will get delayed. Instead, we copy tickets to an office ledger for analysis.
+Now let's see where this appears in the repository. The entrypoint for running the entire pipeline is located in src zwiggy dwh cli dot py, which invokes the orchestrator in pipeline dot py.
+Congratulations, you now understand the high-level purpose, business problem, and repository layout of the Zwiggy Analytics Data Warehouse platform!

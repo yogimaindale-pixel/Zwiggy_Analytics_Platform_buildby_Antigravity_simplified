@@ -1,0 +1,9 @@
+Welcome back student. Today we are going to explore end-to-end data flow and Change Data Capture.
+In a production data pipeline, we cannot re-read full tables on every run. We use Change Data Capture, or CDC, powered by high-watermark timestamps.
+When a batch execution starts, the pipeline looks up the last extracted timestamp in the control watermark table.
+It queries the source database for records updated after that timestamp.
+Delta records are landed into Bronze as JSON payloads. Then, the Silver stage extracts and validates the payload fields, placing valid rows into Silver clean tables and invalid rows into Silver quarantine.
+Finally, the Gold stage resolves surrogate keys and inserts records into Fact tables and SCD Type 2 Dimensions.
+Let's pause and understand this with an example. Think of a high-watermark like placing a bookmark in a textbook. Next time you study, you open directly to your bookmark instead of reading from page one.
+Now let's see where this appears in the repository. Watermark management functions get watermark and update watermark are defined in src zwiggy dwh batch dot py.
+Congratulations, you now understand how incremental data flows seamlessly from operational source tables to analytical Gold star schemas!

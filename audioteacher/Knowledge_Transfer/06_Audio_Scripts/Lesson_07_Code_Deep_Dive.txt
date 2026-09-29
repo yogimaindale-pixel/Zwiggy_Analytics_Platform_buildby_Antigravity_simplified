@@ -1,0 +1,7 @@
+Welcome back student. Today we are going to do a deep dive into the code logic of Bronze, Silver, and Gold transformations.
+Inside src zwiggy dwh bronze dot py, function ingest single table to bronze extracts delta rows using watermark parameters, encodes row tuples into raw JSON payloads, and performs batch append inserts.
+Inside src zwiggy dwh silver dot py, function transform bronze to silver parses JSON payloads, masks email PII using string replacement, casts date strings to ISO timestamps, and inserts clean records.
+Inside src zwiggy dwh gold dot py, function transform silver to gold joins Silver clean tables against active dimension keys to construct FactOrders and FactPayments.
+Let's pause and understand this with an example. Deep dive code inspection is like looking under the hood of a sports car to examine how the fuel injectors, spark plugs, and pistons work together.
+Now let's see where this appears in the repository. You can examine bronze dot py, silver dot py, and gold dot py inside src zwiggy dwh.
+Congratulations, you now understand the inner code mechanics of Bronze ingestion, Silver cleansing, and Gold star schema transformations!
