@@ -1,69 +1,57 @@
-# Zwiggy-Antigravity Medallion Data Warehouse Platform
+# Zwiggy Analytics Platform (Simplified & Fully Commented Edition)
 
-[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-[![Architecture](https://img.shields.io/badge/Architecture-Medallion%20(Bronze%2FSilver%2FGold)-green.svg)]()
-[![Reconciliation](https://img.shields.io/badge/Reconciliation-100%25%20Pass-brightgreen.svg)]()
-[![Tests](https://img.shields.io/badge/Tests-8%20Passed-success.svg)]()
+Welcome to the **Zwiggy Analytics Platform Simplified Edition**. This repository is an exact, simplified, and line-by-line commented mirror of the Zwiggy Analytics Platform Medallion Data Warehouse.
 
-The **Zwiggy-Antigravity Data Warehouse Platform** is an enterprise-grade Medallion Data Warehouse supporting incremental ingestion, status conformance, SCD Type 2 dimension versioning, mandatory cross-layer reconciliation contracts, data quality quarantine routing, automated health diagnostics, and a 10-day incremental simulation engine.
+It is designed specifically for **junior developers**, **data engineers**, and **solutions architects** to learn, build, and run production-grade data pipelines locally without needing complex third-party tools or cloud credentials.
 
 ---
 
-## 🚀 Quick Start
+## 🌟 Key Highlights & Design Goals
 
-### 1. Installation & Environment Setup
+1. **100% Standalone Python**: Runs on standard Python 3 (`sqlite3`, `json`, `hashlib`, `logging`, `argparse`). Zero external packages required for core execution!
+2. **Line-by-Line Beginner Comments**: Every function, loop, parameter, and transformation step is thoroughly commented for immediate understanding.
+3. **Complete Medallion Architecture**: Demonstrates Source Extraction, Bronze Raw Landing, Silver Status Conformance & Data Quality Quarantine, and Gold SCD Type-2 Star Schema Data Modeling.
+4. **Interactive CLI**: Easy subcommands to run individual pipeline steps or the full end-to-end pipeline.
+
+---
+
+## ⚡ Quick Start (Run in 1 Minute!)
+
+No `pip install` required for basic execution:
+
 ```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -e .
-```
+# 1. Clone the repository
+git clone git@github.com:yogimaindale-pixel/Zwiggy_Analytics_Platform_buildby_Antigravity_simplified.git
+cd Zwiggy_Analytics_Platform_buildby_Antigravity_simplified
 
-### 2. Execution Commands (`zwiggy-dwh`)
-```bash
-# Execute end-to-end baseline load (Seed -> Init DB -> Ingest -> Transform -> Reconcile)
-zwiggy-dwh run-all
+# 2. Run the complete Medallion pipeline (Seed -> Init -> Ingest -> Transform -> Reconcile)
+PYTHONPATH=src python3 src/zwiggy_dwh/cli.py run-all
 
-# Execute 10-day incremental data simulation and pipeline execution
-zwiggy-dwh simulate-10-days
+# 3. Check operational health
+PYTHONPATH=src python3 src/zwiggy_dwh/cli.py health-check
 
-# Run operational health check diagnostic
-zwiggy-dwh health-check
+# 4. View Data Quality Scorecard
+PYTHONPATH=src python3 src/zwiggy_dwh/cli.py scorecard
 
-# View Data Quality Scorecard
-zwiggy-dwh scorecard
-
-# Run individual pipeline stages
-zwiggy-dwh seed-source
-zwiggy-dwh init-db
-zwiggy-dwh ingest
-zwiggy-dwh transform
-zwiggy-dwh reconcile
-```
-
-### 3. Run Automated Tests (`pytest`)
-```bash
-PYTHONPATH=src ./venv/bin/pytest -v
+# 5. Simulate 10 days of incremental data ingestion
+PYTHONPATH=src python3 src/zwiggy_dwh/cli.py simulate-10-days
 ```
 
 ---
 
-## 🏛️ Medallion Architecture
+## 🏛️ Medallion Pipeline Runflow
 
 ```
-+------------------+      +------------------+      +------------------+      +------------------+
-|  Source (18 Tbls)| ===> |  Bronze (Raw)    | ===> |  Silver (Clean)  | ===> |   Gold (Star)    |
-| Cohorts A & B    |      | Append-Only Tech |      | Conformed Status |      | 14 SCD2 Dims     |
-| 336k+ Records    |      | Watermarks & MD5 |      | Quarantine Rules |      | 6 Facts / 2 Marts|
-+------------------+      +------------------+      +------------------+      +------------------+
+ +------------------------+      +------------------------+      +------------------------+      +------------------------+
+ |   Operational Source   | ===> |      Bronze Layer      | ===> |      Silver Layer      | ===> |       Gold Layer       |
+ |   (18 app_* tables)    |      |    (18 br_* tables)    |      |    (15 slv_* tables)   |      | (14 Dims, 6 Facts, Marts)
+ |   61,777+ Raw Orders   |      | Landing JSON & Metadata|      | Conformed Status & DQ  |      | SCD2 Type-2 Star Model |
+ +------------------------+      +------------------------+      +------------------------+      +------------------------+
 ```
 
 ---
 
-## 📚 Complete Documentation Catalog
+## 📚 Comprehensive Documentation Index
 
-1. 📖 **[KNOWLEDGE_TRANSFER_AND_ARCHITECTURE_GUIDE.md](file:///config/Desktop/Session4/KNOWLEDGE_TRANSFER_AND_ARCHITECTURE_GUIDE.md)**: Comprehensive KT manual, step-by-step pipeline execution walkthrough, module architecture catalog, and BI developer onboarding.
-2. 🛠️ **[OPERATIONAL_HANDOFF_AND_TROUBLESHOOTING_GUIDE.md](file:///config/Desktop/Session4/OPERATIONAL_HANDOFF_AND_TROUBLESHOOTING_GUIDE.md)**: Daily operational checklist (5 AM, 6 AM, 7 AM UTC), 6 incident response playbooks, and monthly database maintenance runbook.
-3. 📜 **[DWH_TECHNICAL_SPECIFICATION.md](file:///config/Desktop/Session4/DWH_TECHNICAL_SPECIFICATION.md)**: Deep-dive architecture design specification and DDL schemas.
-4. 📊 **[TABLE_INGESTION_CONFIGURATION.csv](file:///config/Desktop/Session4/TABLE_INGESTION_CONFIGURATION.csv)**: 18-table ingestion strategy matrix.
-5. 📖 **[DATA_DICTIONARY.md](file:///config/Desktop/Session4/DATA_DICTIONARY.md)**: Field-level data dictionary for all Bronze, Silver, and Gold tables.
-6. 📋 **[OPERATIONAL_RUNBOOK.md](file:///config/Desktop/Session4/OPERATIONAL_RUNBOOK.md)**: Platform runbook and execution instructions.
+* 📘 [DOCUMENTATION.md](file:///config/Desktop/Zwiggy_Analytics_Platform_buildby_Antigravity_simplified/DOCUMENTATION.md): Complete technical specification, schema catalog, business rules (BR-R1 to BR-R11), and reconciliation checks (RC-1 to RC-10).
+* 🎓 [KNOWLEDGE_TRANSFER.md](file:///config/Desktop/Zwiggy_Analytics_Platform_buildby_Antigravity_simplified/KNOWLEDGE_TRANSFER.md): Junior developer onboarding guide, code walkthrough, and step-by-step KT manual.

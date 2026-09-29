@@ -1,25 +1,52 @@
-"""Data Quality Rule Engine, Quarantine Framework, and Scorecard Metrics.
+# ==============================================================================
+# ZWIGGY ANALYTICS PLATFORM - DATA QUALITY & QUARANTINE ENGINE
+# ==============================================================================
+# File: src/zwiggy_dwh/dq.py
+# Purpose: Evaluates Data Quality rules defined in reference table silver_ref_dq_rule_definition,
+#          routes failing records to quarantine tables, records execution metrics,
+#          and calculates data quality scorecards.
+# ==============================================================================
 
-Evaluates 40+ DQ rules defined in reference tables, routes failing records to
-quarantine tables, records execution metrics, and computes daily quality scorecards.
-"""
-
+# Import UTC datetime utilities.
 from datetime import datetime, timezone
-import json
-import logging
-from typing import Dict, List, Tuple
 
+# Import JSON serialization utilities.
+import json
+
+# Import standard logging module.
+import logging
+
+# Import typing hints and generics.
+from typing import Any, Dict, List, Tuple
+
+# Import audit logger utility and database helpers.
 from zwiggy_dwh.batch import log_audit_event
 from zwiggy_dwh.db import ConnectionWrapper, execute_sql
 
+# Create module-level logger instance.
 logger = logging.getLogger(__name__)
 
 
+# ------------------------------------------------------------------------------
+# DATA QUALITY RULE EVALUATOR & SCORECARD CALCULATOR
+# ------------------------------------------------------------------------------
+
 def evaluate_data_quality_rules(conn: ConnectionWrapper, batch_id: int) -> Dict[str, Any]:
-    """Evaluate DQ rules and perform quarantine routing."""
+    """
+    Evaluates active Data Quality rules against current batch records in Silver layer,
+    routes critical anomalies to quarantine tables, and outputs quality scorecard metrics.
+    
+    Args:
+        conn (ConnectionWrapper): Database connection object.
+        batch_id (int): Current ETL execution batch ID.
+        
+    Returns:
+        Dict[str, Any]: Quality scorecard metrics dictionary.
+    """
     logger.info("Evaluating Data Quality rules for batch_id=%d...", batch_id)
     cur = conn.cursor()
 
+    # Query active rule definitions from Silver reference table.
     rules = execute_sql(conn, "SELECT * FROM silver_ref_dq_rule_definition WHERE is_active = 1;")
     rule_results: List[Dict] = []
     quarantine_counts: Dict[str, int] = {}
@@ -28,6 +55,7 @@ def evaluate_data_quality_rules(conn: ConnectionWrapper, batch_id: int) -> Dict[
     total_passed = 0
     total_failed = 0
 
+    # Process each active rule definition.
     for r in rules:
         rule_id = r['dq_rule_id']
         rname = r['rule_name']
@@ -35,7 +63,7 @@ def evaluate_data_quality_rules(conn: ConnectionWrapper, batch_id: int) -> Dict[
         target_tbl = r['target_table']
         affected_col = r['affected_column']
 
-        # Query Silver records to check rule
+        # Evaluate rule conditions on Silver tables.
         if target_tbl == "slv_order" and affected_col == "dq_flag_pending_but_paid":
             failing_rows = execute_sql(
                 conn, "SELECT * FROM slv_order WHERE dw_batch_id = ? AND dq_flag_pending_but_paid = 1;", (batch_id,)
@@ -50,6 +78,7 @@ def evaluate_data_quality_rules(conn: ConnectionWrapper, batch_id: int) -> Dict[
         fail_cnt = len(failing_rows)
         total_failed += fail_cnt
 
+        # Perform quarantine routing if severity requires isolation.
         if fail_cnt > 0 and severity in ("BLOCK", "QUARANTINE"):
             q_table = f"{target_tbl}_quarantine"
             q_entries = []
@@ -66,6 +95,7 @@ def evaluate_data_quality_rules(conn: ConnectionWrapper, batch_id: int) -> Dict[
 
     conn.commit()
 
+    # Calculate final quality scorecard dictionary.
     scorecard = {
         "batch_id": batch_id,
         "rules_evaluated": len(rules),
@@ -75,6 +105,7 @@ def evaluate_data_quality_rules(conn: ConnectionWrapper, batch_id: int) -> Dict[
         "conformance_score_pct": round(98.8, 2)
     }
 
+    # Log audit completion event.
     log_audit_event(conn, batch_id, "DQ_EVALUATION_COMPLETE", f"Evaluated {len(rules)} DQ rules. Anomalies: {total_failed}.")
     logger.info("DQ Evaluation completed. Scorecard: %s", scorecard)
     return scorecard

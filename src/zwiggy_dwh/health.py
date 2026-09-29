@@ -1,21 +1,44 @@
-"""Operational Health Check and Monitoring Diagnostic Module.
+# ==============================================================================
+# ZWIGGY ANALYTICS PLATFORM - OPERATIONAL HEALTH & DIAGNOSTICS ENGINE
+# ==============================================================================
+# File: src/zwiggy_dwh/health.py
+# Purpose: Provides diagnostic health checks for source connectivity, control batch
+#          lifecycle state, data freshness, reconciliation compliance, and quarantine rates.
+# ==============================================================================
 
-Provides pre-flight checks, daily run monitoring, data freshness metrics,
-storage growth diagnostics, and automated health checks for operational handoff.
-"""
-
+# Import UTC datetime utilities.
 from datetime import datetime, timezone
+
+# Import JSON serialization utilities.
 import json
+
+# Import standard logging module.
 import logging
+
+# Import typing generics.
 from typing import Dict, Any, List
 
+# Import database connection wrapper and query functions.
 from zwiggy_dwh.db import ConnectionWrapper, execute_sql, query_scalar
 
+# Create module-level logger.
 logger = logging.getLogger(__name__)
 
 
+# ------------------------------------------------------------------------------
+# OPERATIONAL HEALTH CHECK RUNNER FUNCTION
+# ------------------------------------------------------------------------------
+
 def run_operational_health_check(conn: ConnectionWrapper) -> Dict[str, Any]:
-    """Execute complete operational health check across Source, Control, Silver, and Gold layers."""
+    """
+    Executes a comprehensive health check across database layers.
+    
+    Args:
+        conn (ConnectionWrapper): Database connection object.
+        
+    Returns:
+        Dict[str, Any]: Structured operational health report dictionary.
+    """
     logger.info("Executing operational health check...")
 
     health_report: Dict[str, Any] = {
@@ -23,7 +46,7 @@ def run_operational_health_check(conn: ConnectionWrapper) -> Dict[str, Any]:
         "checks": {}
     }
 
-    # 1. Source Connectivity & Table Count Check
+    # 1. SOURCE DATABASE CONNECTIVITY & ROW COUNT CHECK
     try:
         source_order_cnt = query_scalar(conn, "SELECT COUNT(*) FROM app_orders;") or 0
         health_report["checks"]["source_connectivity"] = {
@@ -36,7 +59,7 @@ def run_operational_health_check(conn: ConnectionWrapper) -> Dict[str, Any]:
             "error": str(e)
         }
 
-    # 2. Control Batch State Check
+    # 2. CONTROL BATCH STATE & LIFECYCLE CHECK
     latest_batch = execute_sql(conn, """
         SELECT dw_batch_id, batch_start_ts_utc, batch_end_ts_utc, status, run_type
         FROM ctl_batch
@@ -59,14 +82,14 @@ def run_operational_health_check(conn: ConnectionWrapper) -> Dict[str, Any]:
             "message": "No batch executions found in ctl_batch."
         }
 
-    # 3. Data Freshness Check
+    # 3. DATA FRESHNESS SLA METRIC CHECK
     max_order_dt = query_scalar(conn, "SELECT MAX(event_ts_utc) FROM fact_order;")
     health_report["checks"]["data_freshness"] = {
         "status": "HEALTHY" if max_order_dt else "WARNING",
         "latest_fact_order_timestamp": max_order_dt or "N/A"
     }
 
-    # 4. Reconciliation Check Compliance
+    # 4. RECONCILIATION CONTRACT COMPLIANCE CHECK
     rec_fails = execute_sql(conn, """
         SELECT check_name, source_table, target_table, details
         FROM ctl_reconciliation
@@ -78,7 +101,7 @@ def run_operational_health_check(conn: ConnectionWrapper) -> Dict[str, Any]:
         "failures": rec_fails
     }
 
-    # 5. Data Quality & Quarantine Rate Check
+    # 5. DATA QUALITY QUARANTINE RATE CHECK
     gold_orders = query_scalar(conn, "SELECT COUNT(*) FROM fact_order;") or 0
     quarantine_orders = query_scalar(conn, "SELECT COUNT(*) FROM slv_order_quarantine;") or 0
     q_rate_pct = round((quarantine_orders / gold_orders * 100.0), 2) if gold_orders > 0 else 0.0
@@ -90,7 +113,7 @@ def run_operational_health_check(conn: ConnectionWrapper) -> Dict[str, Any]:
         "quarantine_rate_pct": q_rate_pct
     }
 
-    # 6. Overall Platform Health Summary
+    # 6. OVERALL PLATFORM HEALTH SUMMARY EVALUATION
     all_healthy = all(
         c.get("status") in ("HEALTHY", "WARNING") for c in health_report["checks"].values()
     )

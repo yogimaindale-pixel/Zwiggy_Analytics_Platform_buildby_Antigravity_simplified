@@ -1,27 +1,48 @@
-"""Source Database Bootstrap & Seeder for Zwiggy Analytics Platform.
+# ==============================================================================
+# ZWIGGY ANALYTICS PLATFORM - SOURCE DATABASE SEEDER
+# ==============================================================================
+# File: src/zwiggy_dwh/seed_source.py
+# Purpose: Seeds source database app_* tables with 61,777 realistic orders, master entities,
+#          reference data, and pre-configured data quality issue distributions.
+# ==============================================================================
 
-Seeds source database 'zwiggy_db' (app schema/prefix) with all 18 source tables,
-177 columns, and ~336,751 rows matching Cohort A & Cohort B specifications and
-data quality anomaly profiles.
-"""
-
+# Import UTC datetime and timedelta utilities.
 from datetime import datetime, timedelta, timezone
+
+# Import standard logging module.
 import logging
+
+# Import random module for realistic data generation.
 import random
+
+# Import uuid module for generating unique row_id strings.
 import uuid
+
+# Import typing generics.
 from typing import List, Tuple
 
+# Import database connection wrapper and runners.
 from zwiggy_dwh.db import connect, execute_sql, ConnectionWrapper
 
+# Create module-level logger.
 logger = logging.getLogger(__name__)
 
 
+# ------------------------------------------------------------------------------
+# SOURCE DATABASE SEEDER FUNCTION
+# ------------------------------------------------------------------------------
+
 def seed_source_database(conn: ConnectionWrapper) -> None:
-    """Create source tables and seed historical source data."""
+    """
+    Creates source tables and populates seed data across all 18 operational tables.
+    
+    Args:
+        conn (ConnectionWrapper): Database connection object.
+    """
     logger.info("Initializing source schema tables...")
     cur = conn.cursor()
 
-    # Drop existing source tables
+    # Drop existing source tables to ensure a clean run.
     source_tables = [
         "app_orders", "app_order_items", "app_payments", "app_delivery_details",
         "app_reviews", "app_cart", "app_cart_items", "app_customer", "app_user_address",
@@ -32,7 +53,9 @@ def seed_source_database(conn: ConnectionWrapper) -> None:
     for tbl in source_tables:
         cur.execute(f"DROP TABLE IF EXISTS {tbl};")
 
-    # DDL for 18 Source Tables
+    # --------------------------------------------------------------------------
+    # SOURCE TABLE DDL DEFINITIONS (18 TABLES)
+    # --------------------------------------------------------------------------
     cur.execute("""
         CREATE TABLE app_gender (
             id INT PRIMARY KEY,
@@ -246,10 +269,9 @@ def seed_source_database(conn: ConnectionWrapper) -> None:
     conn.commit()
     logger.info("Source tables created. Populating seed data...")
 
-    # 1. Gender (1 row)
+    # Populate reference & master entities.
     cur.execute("INSERT INTO app_gender VALUES (1, 'Unspecified');")
 
-    # 2. Cuisines (38 rows)
     cuisines_list = [
         "North Indian", "South Indian", "Chinese", "Italian", "Mexican",
         "Thai", "Japanese", "Continental", "Biryani", "Fast Food",
@@ -264,34 +286,21 @@ def seed_source_database(conn: ConnectionWrapper) -> None:
     for idx, cname in enumerate(cuisines_list, 1):
         cur.execute("INSERT INTO app_cuisines VALUES (?, ?, ?);", (idx, cname, now_ts))
 
-    # 3. Customer (1,000 customers)
-    customers = []
-    for cid in range(1, 1001):
-        fn = f"Customer_{cid}"
-        ln = "User"
-        email = f"user_{cid}@example.com"
-        phone = f"+9198765{cid:05d}"
-        customers.append((cid, fn, ln, email, phone, 1, now_ts, now_ts))
+    customers = [(cid, f"Customer_{cid}", "User", f"user_{cid}@example.com", f"+9198765{cid:05d}", 1, now_ts, now_ts) for cid in range(1, 1001)]
     cur.executemany("INSERT INTO app_customer VALUES (?,?,?,?,?,?,?,?);", customers)
 
-    # 4. User Address (1,000 addresses)
-    addresses = []
-    for aid in range(1, 1001):
-        addresses.append((aid, aid, f"Street {aid}, Sector {aid % 50}", "Bengaluru", "Karnataka", f"560{aid % 100:03d}", now_ts, now_ts))
+    addresses = [(aid, aid, f"Street {aid}, Sector {aid % 50}", "Bengaluru", "Karnataka", f"560{aid % 100:03d}", now_ts, now_ts) for aid in range(1, 1001)]
     cur.executemany("INSERT INTO app_user_address VALUES (?,?,?,?,?,?,?,?);", addresses)
 
-    # 5. Restaurant Owners (50)
     owners = [(oid, f"Owner_{oid}", f"+9191111{oid:05d}", now_ts, now_ts) for oid in range(1, 51)]
     cur.executemany("INSERT INTO app_restaurant_owner VALUES (?,?,?,?,?);", owners)
 
-    # 6. Restaurants (250) - Restaurant 214 is synthetic outlier (87.1% of orders)
     restaurants = []
     for rid in range(1, 251):
         rname = "Mega Food Cloud" if rid == 214 else f"Restaurant_{rid}"
         restaurants.append((rid, rname, (rid % 50) + 1, "Bengaluru", True, now_ts, now_ts))
     cur.executemany("INSERT INTO app_restaurant VALUES (?,?,?,?,?,?,?);", restaurants)
 
-    # 7. Menu Items (1,000)
     menu_items = []
     for miid in range(1, 1001):
         rid = (miid % 250) + 1
@@ -300,23 +309,13 @@ def seed_source_database(conn: ConnectionWrapper) -> None:
         menu_items.append((miid, rid, mname, price, True, now_ts, now_ts))
     cur.executemany("INSERT INTO app_menu_item VALUES (?,?,?,?,?,?,?);", menu_items)
 
-    # 8. Delivery Partners (100)
     partners = [(dpid, f"Partner_{dpid}", f"+9192222{dpid:05d}", "Bike", True, now_ts, now_ts) for dpid in range(1, 101)]
     cur.executemany("INSERT INTO app_delivery_partner VALUES (?,?,?,?,?,?,?);", partners)
 
     conn.commit()
     logger.info("Master and reference data seeded. Generating 61,777 orders across Cohorts A and B...")
 
-    # 9. Orders Generation (61,777 orders total)
-    # Cohort A: orders 1..10,928 (7,950 orders in sample window, human status vocabulary)
-    # Cohort B: orders 10,929..61,777 (53,827 orders, machine status vocabulary)
-    # 87.1% of orders assigned to restaurant_id 214!
-    # Data Quality issue distribution:
-    # - 7,019 orders marked paid=TRUE but order_status='PENDING'/'Pending'
-    # - 6,794 orders contradictory cancellation flag
-    # - 13,133 missing payments
-    # - 4,239 missing deliveries
-
+    # Seed 61,777 orders across Cohort A (<= 10,928) and Cohort B (> 10,928).
     total_orders = 61777
     cohort_boundary = 10928
     start_date = datetime(2025, 1, 1, tzinfo=timezone.utc)
@@ -329,7 +328,6 @@ def seed_source_database(conn: ConnectionWrapper) -> None:
     human_statuses = ["Completed", "Pending", "Cancelled", "PAID", "Delivered"]
     machine_statuses = ["COMPLETED", "PENDING", "CANCELLED"]
 
-    # Pre-select order indices for DQ anomalies
     pending_paid_indices = set(random.sample(range(1, total_orders + 1), 7019))
     cancel_mismatch_indices = set(random.sample(range(1, total_orders + 1), 6794))
     missing_payment_indices = set(random.sample(range(1, total_orders + 1), 13133))
@@ -344,18 +342,11 @@ def seed_source_database(conn: ConnectionWrapper) -> None:
         cid = (oid % 1000) + 1
         aid = (oid % 1000) + 1
 
-        # Restaurant 214 gets 87.1% of orders
-        if random.random() < 0.871:
-            rid = 214
-        else:
-            rid = random.choice([r for r in range(1, 251) if r != 214])
-
+        rid = 214 if random.random() < 0.871 else random.choice([r for r in range(1, 251) if r != 214])
         order_dt = start_date + timedelta(minutes=oid * 5)
         dt_str = order_dt.strftime('%Y-%m-%d %H:%M:%S')
-
         is_cohort_a = (oid <= cohort_boundary)
 
-        # Status selection
         if oid in pending_paid_indices:
             status = "Pending" if is_cohort_a else "PENDING"
             is_paid = True
@@ -363,12 +354,9 @@ def seed_source_database(conn: ConnectionWrapper) -> None:
         elif oid in cancel_mismatch_indices:
             status = "Completed" if is_cohort_a else "COMPLETED"
             is_paid = True
-            is_cancel = True  # Contradiction!
+            is_cancel = True
         else:
-            if is_cohort_a:
-                status = random.choice(human_statuses)
-            else:
-                status = random.choice(machine_statuses)
+            status = random.choice(human_statuses) if is_cohort_a else random.choice(machine_statuses)
             is_paid = (status in ["Completed", "COMPLETED", "PAID", "Delivered"])
             is_cancel = (status in ["Cancelled", "CANCELLED"])
 
@@ -381,7 +369,6 @@ def seed_source_database(conn: ConnectionWrapper) -> None:
             dt_str, "system", dt_str, "system"
         ))
 
-        # Order Items (Cohort A has line items, Cohort B has items too)
         miid = (oid % 1000) + 1
         item_price = round(total_price / 2.0, 2)
         order_items_batch.append((
@@ -389,7 +376,6 @@ def seed_source_database(conn: ConnectionWrapper) -> None:
         ))
         item_id_counter += 1
 
-        # Payments (if not in missing_payment_indices)
         if oid not in missing_payment_indices:
             p_status = "SUCCESS" if is_paid else "FAILED"
             method = random.choice(["UPI", "CREDIT_CARD", "DEBIT_CARD", "NET_BANKING", "COD"])
@@ -398,14 +384,12 @@ def seed_source_database(conn: ConnectionWrapper) -> None:
             ))
             payment_id_counter += 1
 
-            # Some payments have retries (2,944 orders)
             if oid % 20 == 0:
                 payments_batch.append((
                     payment_id_counter, oid, method, "FAILED", total_price, dt_str, 1, dt_str, dt_str
                 ))
                 payment_id_counter += 1
 
-        # Delivery Details (if not in missing_delivery_indices)
         if oid not in missing_delivery_indices:
             dpid = (oid % 100) + 1
             d_status = "DELIVERED" if status in ["Completed", "COMPLETED", "Delivered"] else "PENDING"
@@ -414,7 +398,6 @@ def seed_source_database(conn: ConnectionWrapper) -> None:
             ))
             delivery_id_counter += 1
 
-        # Execute chunked insert every 5000 rows
         if len(orders_batch) >= 5000:
             cur.executemany("INSERT INTO app_orders VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);", orders_batch)
             cur.executemany("INSERT INTO app_order_items VALUES (?,?,?,?,?,?,?,?);", order_items_batch)
@@ -438,9 +421,3 @@ def seed_source_database(conn: ConnectionWrapper) -> None:
         conn.commit()
 
     logger.info("Source database successfully populated with 61,777 orders and associated tables!")
-
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    with connect() as conn:
-        seed_source_database(conn)

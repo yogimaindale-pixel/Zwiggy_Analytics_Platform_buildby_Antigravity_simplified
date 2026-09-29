@@ -1,24 +1,43 @@
-"""Database Foundations and DDL Initialization for Zwiggy Data Warehouse.
+# ==============================================================================
+# ZWIGGY ANALYTICS PLATFORM - DWH FOUNDATIONS & DDL INITIALIZER
+# ==============================================================================
+# File: src/zwiggy_dwh/init_db.py
+# Purpose: Idempotently initializes Control, Bronze, Silver, Silver Quarantine, and
+#          Gold star-schema structures, seeds reference lookup tables, and populates
+#          ctl_table_config with 18 table strategies.
+# ==============================================================================
 
-Idempotently creates all Control, Bronze, Silver, Silver Quarantine, and Gold
-schema structures, seeds reference data, and populates ctl_table_config.
-"""
-
+# Import standard logging module.
 import logging
+
+# Import typing generics.
 from typing import Optional
 
+# Import database connection wrapper and query runners.
 from zwiggy_dwh.db import ConnectionWrapper, connect, execute_sql
+
+# Import metadata matrix getter.
 from zwiggy_dwh.metadata import get_classification_matrix
 
+# Create module-level logger instance.
 logger = logging.getLogger(__name__)
 
 
+# ------------------------------------------------------------------------------
+# FOUNDATION DDL INITIALIZER FUNCTION
+# ------------------------------------------------------------------------------
+
 def initialize_dwh_foundation(conn: ConnectionWrapper) -> None:
-    """Initialize complete DWH foundation, control tables, reference data, and layer skeletons."""
+    """
+    Executes DDL scripts initializing all database tables across Medallion layers.
+    
+    Args:
+        conn (ConnectionWrapper): Database connection object.
+    """
     logger.info("Initializing Data Warehouse Control & Reference infrastructure...")
     cur = conn.cursor()
 
-    # Drop existing DWH tables to ensure clean idempotent run
+    # Drop existing Control tables for clean idempotent initialization.
     control_tables = [
         "ctl_audit_run_log", "ctl_audit_source_extract", "ctl_reconciliation",
         "ctl_dq_rule", "ctl_watermark", "ctl_table_config", "ctl_batch"
@@ -26,6 +45,7 @@ def initialize_dwh_foundation(conn: ConnectionWrapper) -> None:
     for tbl in control_tables:
         cur.execute(f"DROP TABLE IF EXISTS {tbl};")
 
+    # Drop existing Reference tables.
     reference_tables = [
         "silver_ref_status_map", "silver_ref_payment_status_map",
         "silver_ref_cohort_rule", "silver_ref_dq_rule_definition"
@@ -33,7 +53,10 @@ def initialize_dwh_foundation(conn: ConnectionWrapper) -> None:
     for tbl in reference_tables:
         cur.execute(f"DROP TABLE IF EXISTS {tbl};")
 
-    # 1. Control Tables
+    # --------------------------------------------------------------------------
+    # 1. CONTROL TABLES (ctl_*)
+    # --------------------------------------------------------------------------
+    # ctl_batch: Execution run history table.
     cur.execute("""
         CREATE TABLE ctl_batch (
             dw_batch_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,6 +72,7 @@ def initialize_dwh_foundation(conn: ConnectionWrapper) -> None:
         );
     """)
 
+    # ctl_table_config: 18-table ingestion classification matrix store.
     cur.execute("""
         CREATE TABLE ctl_table_config (
             config_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,6 +96,7 @@ def initialize_dwh_foundation(conn: ConnectionWrapper) -> None:
         );
     """)
 
+    # ctl_watermark: High watermark incremental extraction state store.
     cur.execute("""
         CREATE TABLE ctl_watermark (
             watermark_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,6 +117,7 @@ def initialize_dwh_foundation(conn: ConnectionWrapper) -> None:
         );
     """)
 
+    # ctl_reconciliation: Cross-layer reconciliation check results store.
     cur.execute("""
         CREATE TABLE ctl_reconciliation (
             reconciliation_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -109,6 +135,7 @@ def initialize_dwh_foundation(conn: ConnectionWrapper) -> None:
         );
     """)
 
+    # ctl_dq_rule: Data Quality rule catalog.
     cur.execute("""
         CREATE TABLE ctl_dq_rule (
             dq_rule_id INT PRIMARY KEY,
@@ -124,6 +151,7 @@ def initialize_dwh_foundation(conn: ConnectionWrapper) -> None:
         );
     """)
 
+    # ctl_audit_run_log: Execution audit log events table.
     cur.execute("""
         CREATE TABLE ctl_audit_run_log (
             log_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -137,6 +165,7 @@ def initialize_dwh_foundation(conn: ConnectionWrapper) -> None:
         );
     """)
 
+    # ctl_audit_source_extract: Extract manifest table.
     cur.execute("""
         CREATE TABLE ctl_audit_source_extract (
             extract_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -158,7 +187,7 @@ def initialize_dwh_foundation(conn: ConnectionWrapper) -> None:
     conn.commit()
     logger.info("Control tables created. Populating ctl_table_config with 18 table strategies...")
 
-    # Populate ctl_table_config
+    # Populate ctl_table_config from classification matrix.
     configs = get_classification_matrix()
     for cfg in configs:
         cur.execute("""
@@ -175,7 +204,9 @@ def initialize_dwh_foundation(conn: ConnectionWrapper) -> None:
 
     conn.commit()
 
-    # 2. Reference Tables
+    # --------------------------------------------------------------------------
+    # 2. REFERENCE TABLES (silver_ref_*)
+    # --------------------------------------------------------------------------
     cur.execute("""
         CREATE TABLE silver_ref_status_map (
             status_map_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -249,7 +280,9 @@ def initialize_dwh_foundation(conn: ConnectionWrapper) -> None:
     conn.commit()
     logger.info("Reference data seeded. Initializing Bronze layer tables...")
 
-    # 3. Bronze Tables (br_*)
+    # --------------------------------------------------------------------------
+    # 3. BRONZE LANDING TABLES (br_*)
+    # --------------------------------------------------------------------------
     for cfg in configs:
         b_tbl = cfg.target_bronze_table
         cur.execute(f"DROP TABLE IF EXISTS {b_tbl};")
@@ -270,7 +303,9 @@ def initialize_dwh_foundation(conn: ConnectionWrapper) -> None:
     conn.commit()
     logger.info("Bronze tables created. Initializing Silver layer tables and Silver Quarantine tables...")
 
-    # 4. Silver & Silver Quarantine Tables
+    # --------------------------------------------------------------------------
+    # 4. SILVER & SILVER QUARANTINE TABLES (slv_*)
+    # --------------------------------------------------------------------------
     silver_tables = [
         "slv_order", "slv_order_item", "slv_payment_attempt", "slv_payment",
         "slv_delivery", "slv_review", "slv_customer", "slv_address",
@@ -307,8 +342,9 @@ def initialize_dwh_foundation(conn: ConnectionWrapper) -> None:
     conn.commit()
     logger.info("Silver tables created. Initializing Gold layer (14 SCD2 Dimensions, 6 Facts, 2 Marts)...")
 
-    # 5. Gold Layer
-    # 14 Gold Dimensions
+    # --------------------------------------------------------------------------
+    # 5. GOLD LAYER (14 SCD2 Dimensions, 6 Facts, 2 Marts)
+    # --------------------------------------------------------------------------
     gold_dims = [
         "dim_customer", "dim_address", "dim_restaurant", "dim_menu_item",
         "dim_delivery_partner", "dim_cuisine", "dim_restaurant_owner",
@@ -333,7 +369,6 @@ def initialize_dwh_foundation(conn: ConnectionWrapper) -> None:
             );
         """)
 
-    # 6 Gold Facts
     gold_facts = [
         "fact_order", "fact_order_item", "fact_payment_attempt",
         "fact_payment", "fact_delivery", "fact_review"
@@ -356,7 +391,6 @@ def initialize_dwh_foundation(conn: ConnectionWrapper) -> None:
             );
         """)
 
-    # 2 Aggregate Marts
     cur.execute("DROP TABLE IF EXISTS mart_order_daily;")
     cur.execute("""
         CREATE TABLE mart_order_daily (

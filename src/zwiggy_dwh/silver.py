@@ -1,33 +1,60 @@
-"""Bronze-to-Silver Cleansing, Conformance, and Business Rule Transformation Engine.
+# ==============================================================================
+# ZWIGGY ANALYTICS PLATFORM - BRONZE-TO-SILVER TRANSFORMATION ENGINE
+# ==============================================================================
+# File: src/zwiggy_dwh/silver.py
+# Purpose: Cleanses, normalizes, type-casts, and conforms raw Bronze data into Silver.
+#          Applies Business Rules BR-R1 through BR-R11 (cohort tagging, status
+#          conformance, cancellation contradiction flags, and payment retry collapse).
+# ==============================================================================
 
-Cleanses, types, and conforms Bronze raw data into Silver entities.
-Applies business rules BR-R1 through BR-R11, tags cohorts (order_id 10,928 boundary),
-conforms order and payment statuses, resolves flag contradictions, collapses payment retries,
-and populates slv_* tables.
-"""
-
+# Import UTC datetime utilities.
 from datetime import datetime, timezone
+
+# Import md5 hashing and JSON serialization modules.
 import hashlib
 import json
+
+# Import standard logging module.
 import logging
+
+# Import typing hints.
 from typing import Dict, List, Optional
 
+# Import audit logging helper and database queries.
 from zwiggy_dwh.batch import log_audit_event
 from zwiggy_dwh.db import ConnectionWrapper, execute_sql
 
+# Create standard logger instance for this module.
 logger = logging.getLogger(__name__)
 
+# Business Rule BR-R2: Cohort boundary order_id split.
 COHORT_BOUNDARY_ORDER_ID = 10928
 
 
+# ------------------------------------------------------------------------------
+# BRONZE-TO-SILVER TRANSFORMATION ENGINE FUNCTION
+# ------------------------------------------------------------------------------
+
 def transform_bronze_to_silver(conn: ConnectionWrapper, batch_id: int) -> Dict[str, int]:
-    """Execute Silver layer transformation for a batch."""
+    """
+    Executes Silver layer transformations for raw Bronze landed data.
+    
+    Args:
+        conn (ConnectionWrapper): Database connection object.
+        batch_id (int): Unique batch run execution ID.
+        
+    Returns:
+        Dict[str, int]: Summary mapping Silver table names to transformed row counts.
+    """
     logger.info("Starting Bronze-to-Silver transformation for batch_id=%d...", batch_id)
     cur = conn.cursor()
 
     counts: Dict[str, int] = {}
 
-    # 1. Transform Orders -> slv_order
+    # --------------------------------------------------------------------------
+    # 1. TRANSFORM ORDERS DATA -> slv_order
+    # --------------------------------------------------------------------------
+    # Clear existing Silver order records for current batch to ensure idempotency.
     cur.execute("DELETE FROM slv_order WHERE dw_batch_id = ?;", (batch_id,))
     rows = execute_sql(conn, "SELECT * FROM br_orders WHERE dw_batch_id = ?;", (batch_id,))
 
@@ -39,10 +66,10 @@ def transform_bronze_to_silver(conn: ConnectionWrapper, batch_id: int) -> Dict[s
         payment_status = bool(payload.get('payment_status', False))
         is_cancelled = bool(payload.get('is_cancelled', False))
 
-        # Cohort Tagging (BR-R2)
+        # Business Rule BR-R2: Cohort Tagging based on order_id split.
         cohort = "COHORT_A" if order_id <= COHORT_BOUNDARY_ORDER_ID else "COHORT_B"
 
-        # Status Conformance (BR-R8)
+        # Business Rule BR-R8: Status Conformance mapping.
         norm_status = str(order_status).upper()
         if norm_status in ("COMPLETED", "DELIVERED", "PAID"):
             conformed_status = "COMPLETED"
@@ -53,14 +80,16 @@ def transform_bronze_to_silver(conn: ConnectionWrapper, batch_id: int) -> Dict[s
         else:
             conformed_status = "PENDING"
 
-        # DQ Flags
-        # BR-R3: Pending but paid
+        # Business Rule BR-R3: Flag pending orders with payment completed.
         flag_pending_paid = (conformed_status == "PENDING" and payment_status is True)
-        # BR-R7: Cancellation contradiction
+        
+        # Business Rule BR-R7: Flag cancellation flag contradictions.
         flag_cancel_mismatch = (is_cancelled and conformed_status == "COMPLETED")
 
+        # Compute MD5 row hash for change data capture tracking.
         row_hash = hashlib.md5(f"{order_id}:{conformed_status}:{payment_status}:{is_cancelled}".encode('utf-8')).hexdigest()
 
+        # Build conformed cleaned payload dictionary.
         cleaned_payload = {
             "order_id": order_id,
             "customer_id": payload.get("customer_id"),
@@ -76,11 +105,13 @@ def transform_bronze_to_silver(conn: ConnectionWrapper, batch_id: int) -> Dict[s
             "revenue_is_gross_inclusive": True
         }
 
+        # Append tuple for Silver order insert.
         slv_orders_to_insert.append((
             batch_id, r['dw_ingest_date'], cohort, row_hash,
             flag_pending_paid, flag_cancel_mismatch, json.dumps(cleaned_payload)
         ))
 
+    # Bulk insert conformed records into slv_order.
     if slv_orders_to_insert:
         cur.executemany("""
             INSERT INTO slv_order (
@@ -91,7 +122,10 @@ def transform_bronze_to_silver(conn: ConnectionWrapper, batch_id: int) -> Dict[s
 
     counts["slv_order"] = len(slv_orders_to_insert)
 
-    # 2. Transform Payments -> slv_payment_attempt & slv_payment (BR-R5 Payment retry collapse)
+    # --------------------------------------------------------------------------
+    # 2. TRANSFORM PAYMENTS -> slv_payment_attempt & slv_payment (BR-R5 RETRY COLLAPSE)
+    # --------------------------------------------------------------------------
+    # Clear existing payment records for current batch.
     cur.execute("DELETE FROM slv_payment_attempt WHERE dw_batch_id = ?;", (batch_id,))
     cur.execute("DELETE FROM slv_payment WHERE dw_batch_id = ?;", (batch_id,))
 
@@ -109,11 +143,12 @@ def transform_bronze_to_silver(conn: ConnectionWrapper, batch_id: int) -> Dict[s
         cohort = "COHORT_A" if oid <= COHORT_BOUNDARY_ORDER_ID else "COHORT_B"
         r_hash = hashlib.md5(f"{ppayload['payment_id']}:{pstatus}:{amt}".encode('utf-8')).hexdigest()
 
+        # Add raw attempt.
         attempts_to_insert.append((
             batch_id, pr['dw_ingest_date'], cohort, r_hash, False, False, json.dumps(ppayload)
         ))
 
-        # Collapse retries: pick latest SUCCESS or first attempt
+        # Business Rule BR-R5: Collapse payment retries by taking latest SUCCESS or first attempt.
         if oid not in payments_by_order or pstatus == "SUCCESS":
             payments_by_order[oid] = {
                 "order_id": oid,
@@ -124,6 +159,7 @@ def transform_bronze_to_silver(conn: ConnectionWrapper, batch_id: int) -> Dict[s
                 "payment_date": pdate
             }
 
+    # Insert payment attempts.
     if attempts_to_insert:
         cur.executemany("""
             INSERT INTO slv_payment_attempt (
@@ -132,6 +168,7 @@ def transform_bronze_to_silver(conn: ConnectionWrapper, batch_id: int) -> Dict[s
             ) VALUES (?, ?, ?, ?, ?, ?, ?);
         """, attempts_to_insert)
 
+    # Prepare collapsed single payments.
     payments_to_insert = []
     for oid, pdict in payments_by_order.items():
         cohort = "COHORT_A" if oid <= COHORT_BOUNDARY_ORDER_ID else "COHORT_B"
@@ -141,6 +178,7 @@ def transform_bronze_to_silver(conn: ConnectionWrapper, batch_id: int) -> Dict[s
             cohort, r_hash, False, False, json.dumps(pdict)
         ))
 
+    # Insert collapsed single payments.
     if payments_to_insert:
         cur.executemany("""
             INSERT INTO slv_payment (
@@ -152,7 +190,9 @@ def transform_bronze_to_silver(conn: ConnectionWrapper, batch_id: int) -> Dict[s
     counts["slv_payment_attempt"] = len(attempts_to_insert)
     counts["slv_payment"] = len(payments_to_insert)
 
-    # 3. Transform Master Entities (Customer, Restaurant, Menu Item, Partner)
+    # --------------------------------------------------------------------------
+    # 3. TRANSFORM MASTER ENTITIES & REFERENCE LOOKUPS
+    # --------------------------------------------------------------------------
     master_mappings = [
         ("br_customer", "slv_customer", "customer_id"),
         ("br_restaurant", "slv_restaurant", "restaurant_id"),
@@ -184,6 +224,7 @@ def transform_bronze_to_silver(conn: ConnectionWrapper, batch_id: int) -> Dict[s
 
         counts[s_tbl] = len(s_insert)
 
+    # Commit silver transaction and log audit event.
     conn.commit()
     log_audit_event(conn, batch_id, "SILVER_TRANSFORMATION_COMPLETE", f"Transformed Silver layer ({sum(counts.values())} records).")
     logger.info("Silver layer transformation completed successfully!")

@@ -1,26 +1,48 @@
-"""Mandatory Reconciliation Engine (RC-1 through RC-10 Validation Checks).
+# ==============================================================================
+# ZWIGGY ANALYTICS PLATFORM - MANDATORY RECONCILIATION ENGINE
+# ==============================================================================
+# File: src/zwiggy_dwh/reconcile.py
+# Purpose: Validates cross-layer data contracts (RC-1 through RC-10) between Source
+#          Extracts, Bronze landing, Silver conformed, Silver Quarantine, and Gold Fact tables.
+# ==============================================================================
 
-Validates cross-layer row count, sum, and integrity contracts between
-Source Extract, Bronze, Silver, Silver Quarantine, and Gold Fact layers.
-"""
-
+# Import standard logging module.
 import logging
+
+# Import typing generics.
 from typing import Dict, List, Tuple
 
+# Import audit logging utility and database helpers.
 from zwiggy_dwh.batch import log_audit_event
 from zwiggy_dwh.db import ConnectionWrapper, execute_sql, query_scalar
 
+# Create module-level logger.
 logger = logging.getLogger(__name__)
 
 
+# ------------------------------------------------------------------------------
+# MANDATORY RECONCILIATION RUNNER FUNCTION
+# ------------------------------------------------------------------------------
+
 def run_reconciliation_checks(conn: ConnectionWrapper, batch_id: int) -> List[Dict]:
-    """Execute all mandatory reconciliation rules RC-1 through RC-10."""
+    """
+    Executes cross-layer mandatory reconciliation rules RC-1 through RC-10.
+    
+    Args:
+        conn (ConnectionWrapper): Database connection object.
+        batch_id (int): ETL batch execution ID.
+        
+    Returns:
+        List[Dict]: List of evaluation dictionaries detailing check name, counts, and status.
+    """
     logger.info("Executing mandatory reconciliation checks for batch_id=%d...", batch_id)
     cur = conn.cursor()
 
     reconciliation_results: List[Dict] = []
 
-    # RC-1: Extract Manifest vs Bronze Loaded Rows
+    # --------------------------------------------------------------------------
+    # RC-1: EXTRACT MANIFEST VS BRONZE LANDED ROW COUNT RECONCILIATION
+    # --------------------------------------------------------------------------
     extract_rows = execute_sql(conn, "SELECT source_table, extract_row_count FROM ctl_audit_source_extract WHERE dw_batch_id = ?;", (batch_id,))
 
     for er in extract_rows:
@@ -28,6 +50,7 @@ def run_reconciliation_checks(conn: ConnectionWrapper, batch_id: int) -> List[Di
         src_cnt = er['extract_row_count']
         btbl = f"br_{stbl.replace('app_', '')}"
 
+        # Fetch landed row count in Bronze table.
         bronze_cnt = query_scalar(conn, f"SELECT COUNT(*) FROM {btbl} WHERE dw_batch_id = ?;", (batch_id,)) or 0
         diff = abs(src_cnt - bronze_cnt)
         res = "PASS" if diff == 0 else "FAIL"
@@ -42,12 +65,15 @@ def run_reconciliation_checks(conn: ConnectionWrapper, batch_id: int) -> List[Di
             "details": f"Extract: {src_cnt}, Bronze: {bronze_cnt}, Diff: {diff}"
         })
 
+        # Insert audit record into ctl_reconciliation table.
         cur.execute("""
             INSERT INTO ctl_reconciliation (dw_batch_id, source_table, target_table, check_name, source_row_count, target_row_count, expected_row_count, threshold_percent, result, details)
             VALUES (?, ?, ?, 'RC-1_EXTRACT_VS_BRONZE', ?, ?, ?, 0.00, ?, ?);
         """, (batch_id, stbl, btbl, src_cnt, bronze_cnt, src_cnt, res, f"Diff: {diff}"))
 
-    # RC-2: Bronze vs Silver Loaded + Quarantined
+    # --------------------------------------------------------------------------
+    # RC-2: BRONZE VS SILVER LANDED + QUARANTINED ROW COUNT RECONCILIATION
+    # --------------------------------------------------------------------------
     b_orders_cnt = query_scalar(conn, "SELECT COUNT(*) FROM br_orders WHERE dw_batch_id = ?;", (batch_id,)) or 0
     s_orders_cnt = query_scalar(conn, "SELECT COUNT(*) FROM slv_order WHERE dw_batch_id = ?;", (batch_id,)) or 0
     q_orders_cnt = query_scalar(conn, "SELECT COUNT(*) FROM slv_order_quarantine WHERE dw_batch_id = ?;", (batch_id,)) or 0
@@ -65,7 +91,9 @@ def run_reconciliation_checks(conn: ConnectionWrapper, batch_id: int) -> List[Di
         "details": f"Bronze: {b_orders_cnt}, Silver+Q: {s_orders_cnt + q_orders_cnt}, Diff: {rc2_diff}"
     })
 
-    # RC-3: Silver vs Gold Facts
+    # --------------------------------------------------------------------------
+    # RC-3: SILVER VS GOLD FACT ORDERS ROW COUNT RECONCILIATION
+    # --------------------------------------------------------------------------
     g_orders_cnt = query_scalar(conn, "SELECT COUNT(*) FROM fact_order WHERE dw_batch_id = ?;", (batch_id,)) or 0
     rc3_diff = abs(s_orders_cnt - g_orders_cnt)
     rc3_res = "PASS" if rc3_diff == 0 else "FAIL"

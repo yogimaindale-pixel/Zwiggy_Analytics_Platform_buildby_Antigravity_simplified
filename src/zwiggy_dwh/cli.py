@@ -1,69 +1,111 @@
-"""CLI Interface for Zwiggy Analytics Platform Data Warehouse.
+# ==============================================================================
+# ZWIGGY ANALYTICS PLATFORM - COMMAND LINE INTERFACE (CLI)
+# ==============================================================================
+# File: src/zwiggy_dwh/cli.py
+# Purpose: Command-line entrypoint exposing modular subcommands for database initialization,
+#          source seeding, ingestion, transformation, quality scorecard calculation,
+#          operational health diagnostics, incremental simulation, and end-to-end execution.
+# ==============================================================================
 
-Provides subcommands for database initialization, source seeding, ingestion,
-transformation, quality evaluation, reconciliation, and full pipeline execution.
-"""
-
+# Import standard argument parsing module.
 import argparse
+
+# Import UTC datetime utilities.
 from datetime import datetime, timezone
+
+# Import JSON formatting utility.
 import json
+
+# Import standard logging module.
 import logging
+
+# Import sys module.
 import sys
 
+# Import batch management audit helpers.
 from zwiggy_dwh.batch import start_new_batch, complete_batch
+
+# Import Bronze ingestion module.
 from zwiggy_dwh.bronze import ingest_all_source_tables_to_bronze
+
+# Import configuration settings getter.
 from zwiggy_dwh.config import get_settings
+
+# Import database connection manager and SQL runner.
 from zwiggy_dwh.db import connect, execute_sql
+
+# Import Data Quality rule evaluation engine.
 from zwiggy_dwh.dq import evaluate_data_quality_rules
+
+# Import Silver-to-Gold dimensional builder.
 from zwiggy_dwh.gold import transform_silver_to_gold
+
+# Import DWH database schema initializer.
 from zwiggy_dwh.init_db import initialize_dwh_foundation
+
+# Import master pipeline orchestrator.
 from zwiggy_dwh.pipeline import run_full_etl_pipeline
+
+# Import cross-layer reconciliation runner.
 from zwiggy_dwh.reconcile import run_reconciliation_checks
+
+# Import operational source seeding utility.
 from zwiggy_dwh.seed_source import seed_source_database
+
+# Import Bronze-to-Silver transformation module.
 from zwiggy_dwh.silver import transform_bronze_to_silver
 
 
+# ------------------------------------------------------------------------------
+# MAIN CLI PARSER ENTRYPOINT
+# ------------------------------------------------------------------------------
+
 def main() -> None:
+    """Main CLI entrypoint parsing arguments and dispatching sub-commands."""
     parser = argparse.ArgumentParser(description="Zwiggy Analytics Platform Data Warehouse CLI")
     subparsers = parser.add_subparsers(dest="command", help="Sub-command to execute")
 
-    # seed-source
+    # Command 1: seed-source
     subparsers.add_parser("seed-source", help="Seed source database with 18 tables and 336k rows")
 
-    # init-db
+    # Command 2: init-db
     subparsers.add_parser("init-db", help="Initialize DWH control schemas and layer skeletons")
 
-    # ingest
+    # Command 3: ingest
     subparsers.add_parser("ingest", help="Run Source-to-Bronze ingestion")
 
-    # transform
+    # Command 4: transform
     subparsers.add_parser("transform", help="Run Silver and Gold layer transformations")
 
-    # reconcile
+    # Command 5: reconcile
     subparsers.add_parser("reconcile", help="Execute cross-layer reconciliation checks")
 
-    # scorecard
+    # Command 6: scorecard
     subparsers.add_parser("scorecard", help="Display Data Quality scorecard metrics")
 
-    # health-check
+    # Command 7: health-check
     subparsers.add_parser("health-check", help="Run operational health check diagnostic")
 
-    # simulate-10-days
+    # Command 8: simulate-10-days
     subparsers.add_parser("simulate-10-days", help="Run 10 days of incremental data generation and pipeline execution")
 
-    # run-all
+    # Command 9: run-all
     subparsers.add_parser("run-all", help="Execute complete pipeline end-to-end")
 
+    # Parse command line flags.
     args = parser.parse_args()
 
+    # Configure root logging format.
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
+    # If no subcommand provided or run-all requested, execute full pipeline.
     if not args.command or args.command == "run-all":
         print("Executing Full Medallion Pipeline...")
         run_full_etl_pipeline(seed_source=True, init_db=True)
         print("Pipeline execution completed successfully.")
         return
 
+    # Dispatch subcommand handlers using database context wrapper.
     with connect() as conn:
         if args.command == "seed-source":
             print("Seeding source database...")
@@ -82,7 +124,6 @@ def main() -> None:
             print(f"Bronze Ingestion Complete. Total rows: {sum(counts.values())}")
 
         elif args.command == "transform":
-            # Find latest batch
             latest_batch = execute_sql(conn, "SELECT MAX(dw_batch_id) as bid FROM ctl_batch;")
             bid = latest_batch[0]['bid'] if latest_batch and latest_batch[0]['bid'] else 1
             print(f"Transforming batch {bid}...")

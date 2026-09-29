@@ -1,29 +1,60 @@
-"""Source-to-Bronze Incremental Ingestion Engine.
+# ==============================================================================
+# ZWIGGY ANALYTICS PLATFORM - SOURCE-TO-BRONZE INCREMENTAL INGESTION ENGINE
+# ==============================================================================
+# File: src/zwiggy_dwh/bronze.py
+# Purpose: Extracts raw operational data from 18 source tables, lands raw JSON payloads
+#          into Bronze tables, appends technical metadata columns, logs extraction
+#          manifests, and advances control watermarks.
+# ==============================================================================
 
-Extracts data from 18 source tables in zwiggy_db using metadata-driven strategies,
-lands raw data into Bronze layer with source fidelity preserved, appends standard
-technical metadata columns, writes extraction manifests, and advances watermarks.
-"""
-
+# Import UTC datetime utilities.
 from datetime import datetime, timezone
-import hashlib
-import json
-import logging
-from typing import Dict, List, Optional, Tuple
 
+# Import md5 hashing for extract manifest checksum verification.
+import hashlib
+
+# Import JSON serialization utilities.
+import json
+
+# Import standard logging module.
+import logging
+
+# Import typing generics.
+from typing import Any, Dict, List, Optional, Tuple
+
+# Import control table watermark and audit logging helpers.
 from zwiggy_dwh.batch import get_watermark, update_watermark, log_audit_event
+
+# Import database connection wrapper and query runners.
 from zwiggy_dwh.db import ConnectionWrapper, execute_sql, query_scalar
+
+# Import classification matrix metadata getter.
 from zwiggy_dwh.metadata import get_classification_matrix, TableClassification
 
+# Create standard logger instance.
 logger = logging.getLogger(__name__)
 
+
+# ------------------------------------------------------------------------------
+# INGEST ALL SOURCE TABLES ENTRYPOINT
+# ------------------------------------------------------------------------------
 
 def ingest_all_source_tables_to_bronze(
     conn: ConnectionWrapper,
     batch_id: int,
     cutoff_ts: datetime
 ) -> Dict[str, int]:
-    """Ingest all active source tables into Bronze layer."""
+    """
+    Ingests all 18 configured operational source tables into the Bronze landing layer.
+    
+    Args:
+        conn (ConnectionWrapper): Database connection instance.
+        batch_id (int): Current ETL execution batch ID.
+        cutoff_ts (datetime): Cutoff timestamp for watermark incremental extraction.
+        
+    Returns:
+        Dict[str, int]: Summary mapping table names to extracted row counts.
+    """
     logger.info("Starting Source-to-Bronze ingestion for batch_id=%d...", batch_id)
     configs = get_classification_matrix()
     summary_counts: Dict[str, int] = {}
@@ -31,16 +62,22 @@ def ingest_all_source_tables_to_bronze(
     ingest_date_str = cutoff_ts.strftime('%Y-%m-%d')
     ingest_ts_str = cutoff_ts.strftime('%Y-%m-%d %H:%M:%S')
 
+    # Iterate through all 18 classification configurations.
     for cfg in configs:
         count = ingest_single_table_to_bronze(conn, cfg, batch_id, ingest_date_str, ingest_ts_str)
         summary_counts[cfg.source_table] = count
 
+    # Log audit event for batch completion.
     log_audit_event(
         conn, batch_id, "BRONZE_INGESTION_COMPLETE",
         f"Ingested {sum(summary_counts.values())} rows across {len(summary_counts)} tables."
     )
     return summary_counts
 
+
+# ------------------------------------------------------------------------------
+# INGEST SINGLE SOURCE TABLE TO BRONZE
+# ------------------------------------------------------------------------------
 
 def ingest_single_table_to_bronze(
     conn: ConnectionWrapper,
@@ -49,16 +86,29 @@ def ingest_single_table_to_bronze(
     ingest_date_str: str,
     ingest_ts_str: str
 ) -> int:
-    """Ingest a single table from source to Bronze layer."""
+    """
+    Ingests a single operational source table into its matching Bronze landing table.
+    
+    Args:
+        conn (ConnectionWrapper): Database connection instance.
+        cfg (TableClassification): Single table classification metadata configuration.
+        batch_id (int): ETL batch execution ID.
+        ingest_date_str (str): Date string (YYYY-MM-DD).
+        ingest_ts_str (str): Timestamp string (YYYY-MM-DD HH:MM:SS).
+        
+    Returns:
+        int: Number of rows landed into Bronze for this table.
+    """
     source_table = cfg.source_table
     target_bronze = cfg.target_bronze_table
     strategy = cfg.ingestion_strategy
     pk_col = cfg.primary_key_column
     watermark_col = cfg.watermark_column
 
+    # Fetch last high watermark value from control database table.
     last_watermark = get_watermark(conn, source_table)
 
-    # Build extraction query based on strategy
+    # Build SQL extraction query based on ingestion strategy.
     query = f"SELECT * FROM {source_table}"
     params: List[Any] = []
 
@@ -67,6 +117,7 @@ def ingest_single_table_to_bronze(
             query += f" WHERE {watermark_col} > ?"
             params.append(last_watermark)
 
+    # Execute extraction with timer tracking.
     start_time = datetime.now(timezone.utc)
     rows = execute_sql(conn, query, params if params else None)
     end_time = datetime.now(timezone.utc)
@@ -75,17 +126,18 @@ def ingest_single_table_to_bronze(
     min_wm: Optional[str] = None
     max_wm: Optional[str] = None
 
+    # Calculate min and max watermark boundaries from extracted dataset.
     if extracted_count > 0 and watermark_col:
         wm_vals = [str(r[watermark_col]) for r in rows if r.get(watermark_col) is not None]
         if wm_vals:
             min_wm = min(wm_vals)
             max_wm = max(wm_vals)
 
-    # Idempotent write: delete existing rows for this batch_id in bronze
+    # Delete existing rows in target bronze table for this batch_id to ensure idempotency.
     cur = conn.cursor()
     cur.execute(f"DELETE FROM {target_bronze} WHERE dw_batch_id = ?;", (batch_id,))
 
-    # Insert into bronze table
+    # Format raw rows into Bronze landing tuples with standard technical metadata columns.
     records_to_insert = []
     for r in rows:
         pk_val = str(r[pk_col]) if r.get(pk_col) is not None else str(r.get('row_id', ''))
@@ -95,6 +147,7 @@ def ingest_single_table_to_bronze(
             "zwiggy_db", "app", source_table, payload_str, pk_val
         ))
 
+    # Perform bulk insertion into Bronze landing table.
     if records_to_insert:
         cur.executemany(f"""
             INSERT INTO {target_bronze} (
@@ -106,7 +159,7 @@ def ingest_single_table_to_bronze(
 
     conn.commit()
 
-    # Write audit manifest
+    # Compute checksum hash and log audit source extraction manifest.
     checksum_str = f"{source_table}:{extracted_count}:{min_wm}:{max_wm}"
     checksum_hash = hashlib.md5(checksum_str.encode('utf-8')).hexdigest()
 
@@ -123,7 +176,7 @@ def ingest_single_table_to_bronze(
     ))
     conn.commit()
 
-    # Update watermark if max_wm was found or retain last_watermark
+    # Advance control table watermark for the source table.
     new_wm = max_wm or last_watermark or ingest_ts_str
     update_watermark(conn, source_table, new_wm, batch_id, extracted_count, extracted_count)
 
